@@ -17,15 +17,6 @@ std::vector<Mesh> Model::GetMeshes()
 	return meshes;
 }
 
-glm::vec3 Model::GetCenteringVector()
-{
-	glm::vec3 centeringVector;
-	centeringVector.x = (m_AABB.xmin + m_AABB.xmax) / 2.0f;
-	centeringVector.y = (m_AABB.ymin + m_AABB.ymax) / 2.0f;
-	centeringVector.z = (m_AABB.zmin + m_AABB.zmax) / 2.0f;
-	return -centeringVector;
-}
-
 glm::vec3 Model::GetModelCenter() {
 	glm::vec3 center;
 	center.x = (m_AABB.xmin + m_AABB.xmax) / 2.0f;
@@ -113,6 +104,10 @@ void Model::LogTextureInfo() {
 	}
 }
 
+unsigned int Model::GetNumVertices() {
+	return m_NumVertices;
+}
+
 AABB Model::GetAABB()
 {
 	return m_AABB;;
@@ -127,7 +122,7 @@ void Model::loadModel(const std::string path)
 		std::cout << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
 		return;
 	}
-	directory = path.substr(0, path.find_last_of('/'));
+	m_Directory = path.substr(0, path.find_last_of('/'));
 
 	processNode(scene->mRootNode, scene);
 }
@@ -137,6 +132,7 @@ void Model::processNode(aiNode * node, const aiScene * scene)
 	// process all current meshes
 	for (unsigned int i = 0; i < node->mNumMeshes; i++) {
 		aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+		m_NumVertices += mesh->mNumVertices;
 		meshes.push_back(processMesh(mesh, scene));
 	}
 
@@ -204,18 +200,23 @@ Mesh Model::processMesh(aiMesh * mesh, const aiScene * scene)
 	}
 
 	// process textures
+	// each mesh can only have one single material, while a material can have multiple diffuse and specular textures
 	if (mesh->mMaterialIndex >= 0) {
+		// we get the material of the current mesh
 		aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
-		vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
+		// TODO: can I check here whether this material is using embedded textures?
+		// all I want here is a vector of textures, so it doesn't matter whether they are embedded or not
+		vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", scene);
 		textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
-		vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
+		vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular", scene);
 		textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
 	}
 	
 	return Mesh(vertices, indices, textures);
 }
 
-std::vector<Texture> Model::loadMaterialTextures(aiMaterial * mat, aiTextureType type, std::string typeName)
+// we need the scene object because we need access to embedded textures
+std::vector<Texture> Model::loadMaterialTextures(aiMaterial * mat, aiTextureType type, std::string typeName, const aiScene * scene)
 {
 	std::vector<Texture> textures;
 	for (unsigned int i = 0; i < mat->GetTextureCount(type); i++) {
@@ -223,6 +224,12 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial * mat, aiTextureType
 		mat->GetTexture(type, i, &str);
 		// print out the path of the current texture file :)
 		//std::cout << str.C_Str() << std::endl;
+		// TODO: check whether this texture is embedded and design solutions to deal with embedded textures
+		bool embedded = false;
+		if (str.data[0] == '*') {
+			embedded = true;
+		}
+
 		bool skip = false;
 		for (unsigned int j = 0; j < textures_loaded.size(); j++) {
 			if (std::strcmp(textures_loaded[j].path.data(), str.C_Str()) == 0) {
@@ -233,7 +240,10 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial * mat, aiTextureType
 		}
 		if (!skip) {
 			Texture texture;
-			texture.id = TextureFromFile(str.C_Str(), directory);
+			if (!embedded)
+				texture.id = TextureFromFile(str.C_Str(), m_Directory);
+			else
+				texture.id = TextureFromMemory(str.C_Str(), scene);
 			texture.type = typeName;
 			texture.path = str.C_Str();
 			textures.push_back(texture);
@@ -243,8 +253,9 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial * mat, aiTextureType
 	return textures;
 }
 
-unsigned int Model::TextureFromFile(const char * path, const string & directory)
-{
+// for non-embedded textures
+unsigned int Model::TextureFromFile(const char * path, const string & directory) {
+
 	string filename = string(path);
 	filename = directory + '/' + filename;
 
@@ -253,8 +264,7 @@ unsigned int Model::TextureFromFile(const char * path, const string & directory)
 
 	int width, height, nrComponents;
 	unsigned char *data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 0);
-	if (data)
-	{
+	if (data) {
 		GLenum format;
 		if (nrComponents == 1)
 			format = GL_RED;
@@ -265,7 +275,6 @@ unsigned int Model::TextureFromFile(const char * path, const string & directory)
 
 		glBindTexture(GL_TEXTURE_2D, textureID);
 		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-		//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 		glGenerateMipmap(GL_TEXTURE_2D);
 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -279,6 +288,51 @@ unsigned int Model::TextureFromFile(const char * path, const string & directory)
 	{
 		std::cout << "Texture failed to load at path: " << path << std::endl;
 		stbi_image_free(data);
+	}
+
+	return textureID;
+}
+
+// for embedded textures
+unsigned int Model::TextureFromMemory(const char * path, const aiScene * scene) {
+
+	// TODO: make these conversions more efficient
+	std::string str(path);
+	std::string embeddedIndex = str.substr(1, str.length());
+	aiTexture * embeddedTexture = scene->mTextures[atoi(embeddedIndex.c_str())];
+
+	unsigned int textureID;
+	glGenTextures(1, &textureID);
+
+	int width, height, nrComponents;
+	unsigned char *image_data;
+	if (embeddedTexture->mHeight == 0) {
+		image_data = stbi_load_from_memory(reinterpret_cast<unsigned char*>(embeddedTexture->pcData), embeddedTexture->mWidth, &width, &height, &nrComponents, 0);
+	} else {
+		image_data = stbi_load_from_memory(reinterpret_cast<unsigned char*>(embeddedTexture->pcData), embeddedTexture->mWidth * embeddedTexture->mHeight, &width, &height, &nrComponents, 0);
+	}
+	if (image_data) {
+		GLenum format;
+		if (nrComponents == 1)
+			format = GL_RED;
+		else if (nrComponents == 3)
+			format = GL_RGB;
+		else if (nrComponents == 4)
+			format = GL_RGBA;
+
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, image_data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		stbi_image_free(image_data);
+	} else {
+		std::cout << "Embedded Texture failed to load at path: " << path << std::endl;
+		stbi_image_free(image_data);
 	}
 
 	return textureID;

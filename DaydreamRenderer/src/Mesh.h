@@ -19,6 +19,7 @@ struct Vertex {
 };
 
 struct Texture {
+	// the OpenGL texture id
 	unsigned int id;
 	// diffuse or specular?
 	std::string type;

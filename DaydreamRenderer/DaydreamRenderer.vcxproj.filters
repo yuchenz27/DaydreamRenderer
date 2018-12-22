@@ -59,9 +59,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\Helper.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\Mesh.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -107,10 +104,16 @@
     <ClInclude Include="src\FPCamera.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\PrefabInitialization.h">
+    <ClInclude Include="src\DeferredShading.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\GBuffer.h">
+    <ClInclude Include="src\TextureLoading.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ShadowMap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\PrefabsCreation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -137,7 +140,9 @@
     <None Include="resources\shaders\QuadDisplayFragment.shader" />
     <None Include="resources\shaders\DeferredBlinnPhongShadingVertex.shader" />
     <None Include="resources\shaders\DeferredBlinnPhongShadingFragment.shader" />
-    <None Include="resources\shaders\DyedCubeVertex.shader" />
-    <None Include="resources\shaders\DyedCubeFragment.shader" />
+    <None Include="resources\shaders\SingleColorFragment.shader" />
+    <None Include="resources\shaders\SingleColorVertex.shader" />
+    <None Include="resources\shaders\GroundPlaneVertex.shader" />
+    <None Include="resources\shaders\GroundPlaneFragment.shader" />
   </ItemGroup>
 </Project>

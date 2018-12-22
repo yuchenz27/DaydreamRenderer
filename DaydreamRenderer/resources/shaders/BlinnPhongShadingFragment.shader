@@ -33,10 +33,10 @@ out vec4 FragColor;
 
 uniform Material material;
 uniform Light light;
-uniform bool enableAttenuation;
-uniform bool enableGammaCorrection;
+uniform bool enableAttenuation = false;
+uniform bool enableGammaCorrection = false;
 uniform float gamma;
-uniform bool enableShadowMap;
+uniform bool enableShadowMap = false;
 uniform sampler2D shadowMap;
 uniform float shadowBias;
 

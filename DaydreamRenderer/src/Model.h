@@ -35,8 +35,6 @@ public:
 	Model(const std::string path);
 	void Draw(Shader &shader);
 	std::vector<Mesh> GetMeshes();
-	// TODO: delete following method
-	glm::vec3 GetCenteringVector();
 	glm::vec3 GetModelCenter();
 	float GetModelFeet();
 	float GetModelHead();
@@ -46,19 +44,22 @@ public:
 	static AABB TransformAABB(AABB aabb, glm::mat4 model);
 	static void LogAABB(const AABB aabb);
 	void LogTextureInfo();
+	unsigned int GetNumVertices();
 
 private:
 	std::vector<Mesh> meshes;
 	// we retain this directory since we need to load textures from this same directory
-	std::string directory;
+	std::string m_Directory;
 	std::vector<Texture> textures_loaded;
 	// the order is xmin, xmax, ymin, ymax, zmin and zmax
 	AABB m_AABB;
+	unsigned int m_NumVertices;
 
 	void loadModel(const std::string path);
 	// recursive process
 	void processNode(aiNode* node, const aiScene* scene);
 	Mesh processMesh(aiMesh* mesh, const aiScene* scene);
-	std::vector<Texture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, std::string typeName);
+	std::vector<Texture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, std::string typeName, const aiScene * scene);
 	unsigned int static TextureFromFile(const char *path, const string &directory);
+	unsigned int static TextureFromMemory(const char *path, const aiScene * scene);
 };
