@@ -96,7 +96,7 @@ void SphereCamera::UpdateRadius(float v)
 }
 
 void SphereCamera::ProcessKeyboardInput(GLFWwindow * window) {
-	ProcessKeyboardInputDefault(window);
+	ProcessKeyboardInputCommon(window);
 }
 
 glm::mat4 SphereCamera::GetViewMatrix() {

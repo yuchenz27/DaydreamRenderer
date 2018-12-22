@@ -17,8 +17,16 @@ void FPCamera::UpdateYaw(float v) {
 	m_Yaw += v;
 }
 
+void FPCamera::UpdataFront() {
+	glm::vec3 newFront;
+	newFront.x = cos(glm::radians(m_Yaw)) * cos(glm::radians(m_Pitch));
+	newFront.y = sin(glm::radians(m_Pitch));
+	newFront.z = sin(glm::radians(m_Yaw)) * cos(glm::radians(m_Pitch));
+	m_Front = glm::normalize(newFront);
+}
+
 void FPCamera::ProcessKeyboardInput(GLFWwindow * window) {
-	ProcessKeyboardInputDefault(window);
+	ProcessKeyboardInputCommon(window);
 
 	float thisFrameSpeed = m_CameraSpeed * m_DeltaTime;
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {

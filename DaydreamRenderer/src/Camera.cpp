@@ -31,7 +31,11 @@ void Camera::UpdateDeltaTime() {
 	m_LastFrame = currentFrame;
 }
 
-void Camera::ProcessKeyboardInputDefault(GLFWwindow* window) {
+void Camera::UpdateLastFrame() {
+	m_LastFrame = glfwGetTime();
+}
+
+void Camera::ProcessKeyboardInputCommon(GLFWwindow* window) {
 	// press ESC to exit
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, true);
@@ -39,6 +43,10 @@ void Camera::ProcessKeyboardInputDefault(GLFWwindow* window) {
 	// report the current world position
 	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
 		std::cout << "The current world position is: (" + std::to_string(m_Position.x) + ", " + std::to_string(m_Position.y) + ", " + std::to_string(m_Position.z) + ")" << std::endl;
+	}
+	// log the current glfw time
+	if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
+		std::cout << "The current GLFW time is: " << glfwGetTime() << std::endl;
 	}
 }
 
@@ -72,6 +80,10 @@ void Camera::SetFar(float v) {
 
 void Camera::GameStart() {
 	m_IsFirstFrame = false;
+}
+
+void Camera::GamePause() {
+	m_IsFirstFrame = true;
 }
 
 void Camera::SetLastMouseX(float mouseX) {

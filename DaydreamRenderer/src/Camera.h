@@ -42,7 +42,8 @@ public:
 	// this method should be called every time the intrinsic parameters modified
 	void UpdateProjectionMatrix();
 	void UpdateDeltaTime();
-	void ProcessKeyboardInputDefault(GLFWwindow* window);
+	void UpdateLastFrame();
+	void ProcessKeyboardInputCommon(GLFWwindow* window);
 	virtual void ProcessKeyboardInput(GLFWwindow* window) = 0;
 
 	// setters
@@ -53,6 +54,7 @@ public:
 	void SetNear(float v);
 	void SetFar(float v);
 	void GameStart();
+	void GamePause();
 	void SetLastMouseX(float mouseX);
 	void SetLastMouseY(float mouseY);
 	void SetMouseSensitivity(float v);

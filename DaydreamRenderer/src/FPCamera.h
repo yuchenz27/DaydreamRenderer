@@ -17,6 +17,7 @@ public:
 	FPCamera(glm::vec3 position, glm::vec3 front, glm::vec3 up, float fov, float aspectRatio, float near, float far);
 	void UpdatePitch(float v);
 	void UpdateYaw(float v);
+	void UpdataFront();
 	void ProcessKeyboardInput(GLFWwindow* window) override;
 	glm::mat4 GetViewMatrix() override;
 

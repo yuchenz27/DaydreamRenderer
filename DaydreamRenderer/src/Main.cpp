@@ -22,10 +22,16 @@
 void FramebufferSizeCallback(GLFWwindow* window, const int width, const int height);
 void SphereCameraMouseCallback(GLFWwindow* window, double xpos, double ypos);
 void SphereCameraScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+void FPCameraMouseCallback(GLFWwindow* window, double xpos, double ypos);
+void FPCameraScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+void ProcessCameraSwitching(GLFWwindow* window);
 
-const int SCR_WIDTH = 3000;
-const int SCR_HEIGHT = 1800;
-SphereCamera sphereCamera(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 45.0f, (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f, 5.0f);
+const static int SCR_WIDTH = 3000;
+const static int SCR_HEIGHT = 1800;
+static SphereCamera sphereCamera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 45.0f, (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f, 5.0f);
+static FPCamera fpCamera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 45.0f, (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f);
+static CameraType currentCamera = Sphere;
+static double cameraSwitchFlag = 0.0;
 
 int main() {
 	GLFWwindow* window;
@@ -66,7 +72,7 @@ int main() {
 	ImGui_ImplOpenGL3_Init("#version 330");
 	ImGui::StyleColorsDark();
 
-	// ----------------------------------------------------------------------------------------------------------------
+	// MODEL LOADING------------------------------------------------------------------------------------------------------------
 	//Model theModel("resources/models/nanosuit/nanosuit.obj");
 	Model theModel("resources/models/Myriam/10016_w_Myriam.fbx");
 	//Model theModel("resources/models/cube.obj");
@@ -78,7 +84,7 @@ int main() {
 	unsigned int cubeVAO = CreateCubeVAO();
 	unsigned int planeVAO = CreatePlaneVAO();
 
-	// ----------------------------------------------------------------------------------------------------------------
+	// SHADERS----------------------------------------------------------------------------------------------------------------
 	Shader ShadowMapRenderingShader("resources/shaders/ShadowMapRendering");
 	Shader ShadowMapVisualizationShader("resources/shaders/ShadowMapVisualization");
 	Shader GeometryPassShader("resources/shaders/GeometryPass");
@@ -87,7 +93,7 @@ int main() {
 	Shader SingleColorShader("resources/shaders/SingleColor");
 	Shader GroundPlaneShader("resources/shaders/GroundPlane");
 
-	// ----------------------------------------------------------------------------------------------------------------
+	// SHADOW MAP SETUP-------------------------------------------------------------------------------------------------------
 	// set up shadow map
 	const unsigned int SHADOWMAP_WIDTH = 3000;
 	const unsigned int SHADOWMAP_HEIGHT = 3000;
@@ -109,8 +115,11 @@ int main() {
 	float quadraticFactor = 0.032f;
 	float shininess = 16.0f;
 	
-	// new parameters
-	bool visualizeGBuffers = false;
+	// G-BUFFER SETUP----------------------------------------------------------------------------------------------------
+	GBuffer gBuffer = InitGBuffer(SCR_WIDTH, SCR_HEIGHT);
+
+	// PARAMETERS-----------------------------------------------------------------------------------------------------
+	bool visualizeGBuffer = false;
 	int gBufferIndex = 0;
 	glm::vec3 backgroundColor(0.86f, 0.86f, 0.86f);
 	glm::vec3 groundPlaneColor(0.95f, 0.95f, 0.95f);
@@ -127,19 +136,28 @@ int main() {
 	float shadowBias = 0.002f;
 	int pcfRadius = 3;
 
-	// ---------------------------------------------------------------------------------------------------------
-	GBuffer gBuffer = InitGBuffer(SCR_WIDTH, SCR_HEIGHT);
 
 	// the rendering loop
 	while (!glfwWindowShouldClose(window)) {
 
-		sphereCamera.UpdateDeltaTime();
-		sphereCamera.ProcessKeyboardInput(window);
-		// Start the ImGui frame
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
-
+		// CAMERA STUFF-------------------------------------------------------------------------------------------------------
+		ProcessCameraSwitching(window);
+		glm::mat4 viewMatrix;
+		glm::mat4 projectionMatrix;
+		glm::vec3 cameraPosition;
+		if (currentCamera == Sphere) {
+			sphereCamera.ProcessKeyboardInput(window);
+			viewMatrix = sphereCamera.GetViewMatrix();
+			projectionMatrix = sphereCamera.GetProjectionMatrix();
+			cameraPosition = sphereCamera.GetPosition();
+		} else if (currentCamera == FP) {
+			fpCamera.UpdateDeltaTime();
+			fpCamera.ProcessKeyboardInput(window);
+			viewMatrix = fpCamera.GetViewMatrix();
+			projectionMatrix = fpCamera.GetProjectionMatrix();
+			cameraPosition = fpCamera.GetPosition();
+		}
+		
 		// THE GEOMETRY PASS--------------------------------------------------------------------------------------------------
 		// set up the model matrix first
 		// NOTICE: if we scale first and then translate, the following translation will also be scaled!
@@ -151,13 +169,13 @@ int main() {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		GeometryPassShader.Bind();
 		GeometryPassShader.SetUniformMatrix4fv("model", model);
-		GeometryPassShader.SetUniformMatrix4fv("view", sphereCamera.GetViewMatrix());
-		GeometryPassShader.SetUniformMatrix4fv("projection", sphereCamera.GetProjectionMatrix());
+		GeometryPassShader.SetUniformMatrix4fv("view", viewMatrix);
+		GeometryPassShader.SetUniformMatrix4fv("projection", projectionMatrix);
 		// draw the model
 		theModel.Draw(GeometryPassShader);
 		
 		// OPTIONAL: visualize the G-buffer-----------------------------------------------------------------------------------
-		if (visualizeGBuffers) {
+		if (visualizeGBuffer) {
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			QuadDisplayShader.Bind();
@@ -182,7 +200,8 @@ int main() {
 
 		// RENDERING THE SHADOW MAP------------------------------------------------------------------------------------------
 		glm::mat4 lightViewProjection; // need to use this in other scope
-		if (useShadowMap) {
+		// TODO: for some unknown reason, if I ran g-buffer visualization and shadow map rendering simultaneously, the UI just disappeared
+		if (useShadowMap && !visualizeGBuffer) {
 			ShadowMapRenderingShader.Bind();
 			glm::mat4 lightView = glm::lookAt(directionalLightPosition, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 			//lightProjection = ComputeOptimalShadowMapProjectionMatrix(theModel.GetAABB(), lightView * model);
@@ -190,8 +209,9 @@ int main() {
 			lightViewProjection = lightProjection * lightView;
 			ShadowMapRenderingShader.SetUniformMatrix4fv("lightViewProjection", lightViewProjection);
 			ShadowMapRenderingShader.SetUniformMatrix4fv("model", model);
-			glViewport(0, 0, SHADOWMAP_WIDTH, SHADOWMAP_HEIGHT);
 			glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.FBO);
+			glViewport(0, 0, SHADOWMAP_WIDTH, SHADOWMAP_HEIGHT);
+			//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			glClear(GL_DEPTH_BUFFER_BIT);
 			theModel.Draw(ShadowMapRenderingShader);
 			// also draw the ground plane
@@ -215,7 +235,7 @@ int main() {
 		}
 		
 		// THE LIGHTING PASS-----------------------------------------------------------------------------------------------
-		if (!visualizeGBuffers && !visualizeShadowMap) {
+		if (!visualizeGBuffer && !visualizeShadowMap) {
 			
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -233,7 +253,7 @@ int main() {
 			DeferredBlinnPhongShader.SetUniform1i("gNormal", 1);
 			DeferredBlinnPhongShader.SetUniform1i("gDiffuse", 2);
 			DeferredBlinnPhongShader.SetUniform1i("gSpecular", 3);
-			DeferredBlinnPhongShader.SetUniformVector3fv("viewPos", sphereCamera.GetPosition());
+			DeferredBlinnPhongShader.SetUniformVector3fv("viewPos", cameraPosition);
 			DeferredBlinnPhongShader.SetUniform1f("shininess", shininess);
 			DeferredBlinnPhongShader.SetUniform1f("constantFactor", constantFactor);
 			DeferredBlinnPhongShader.SetUniform1f("linearFactor", linearFactor);
@@ -265,6 +285,7 @@ int main() {
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 			glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			/*
 			// render lighting cubes
 			SingleColorShader.Bind();
 			glBindVertexArray(cubeVAO);
@@ -272,15 +293,16 @@ int main() {
 				glm::mat4 lightModel;
 				lightModel = glm::translate(lightModel, pointLights.positions[i]);
 				lightModel = glm::scale(lightModel, glm::vec3(0.125f));
-				SingleColorShader.SetUniformMatrix4fv("mvp", sphereCamera.GetProjectionMatrix() * sphereCamera.GetViewMatrix() * lightModel);
+				SingleColorShader.SetUniformMatrix4fv("mvp", projectionMatrix * viewMatrix * lightModel);
 				SingleColorShader.SetUniformVector3fv("color", pointLights.colors[i]);
 				glDrawArrays(GL_TRIANGLES, 0, 36);
 			}
+			*/
 			// rendering the ground plane
 			GroundPlaneShader.Bind();
 			GroundPlaneShader.SetUniformMatrix4fv("model", groundPlaneModel);
-			GroundPlaneShader.SetUniformMatrix4fv("view", sphereCamera.GetViewMatrix());
-			GroundPlaneShader.SetUniformMatrix4fv("projection", sphereCamera.GetProjectionMatrix());
+			GroundPlaneShader.SetUniformMatrix4fv("view", viewMatrix);
+			GroundPlaneShader.SetUniformMatrix4fv("projection", projectionMatrix);
 			GroundPlaneShader.SetUniformVector3fv("backgroundColor", backgroundColor);
 			GroundPlaneShader.SetUniformVector3fv("groundPlaneColor", groundPlaneColor);
 			GroundPlaneShader.SetUniform1f("innerRadius", groundPlaneInnerRadius);
@@ -300,65 +322,67 @@ int main() {
 		
 		// -----------------------------------------------------------------------------------------------------------
 		// ImGui stuff
-		{
-			static float f = 0.0f;
-			static int counter = 0;
+		// Start the ImGui frame
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
 
-			ImGui::Begin("Control Panel");                          
-			ImGui::Text("General:");
-			// control the scaling
-			ImGui::SliderFloat("Scaling", &scalingFactor, 0.0f, 0.5f);
-			ImGui::Checkbox("G-buffer", &visualizeGBuffers);
-			const char* items[] = { "position", "normal", "diffuse", "specular" };
-			ImGui::Combo("", &gBufferIndex, items, IM_ARRAYSIZE(items));
-			ImGui::Checkbox("Visualize shadow map", &visualizeShadowMap);
+		static float f = 0.0f;
+		static int counter = 0;
+		ImGui::Begin("Control Panel");                          
+		ImGui::Text("General:");
+		// control the scaling
+		ImGui::SliderFloat("Scaling", &scalingFactor, 0.0f, 0.5f);
+		ImGui::Checkbox("G-buffer", &visualizeGBuffer);
+		const char* items[] = { "position", "normal", "diffuse", "specular" };
+		ImGui::Combo("", &gBufferIndex, items, IM_ARRAYSIZE(items));
+		ImGui::Checkbox("Visualize shadow map", &visualizeShadowMap);
 
-			/*
-			// gamma correction
-			ImGui::Checkbox("Enable gamma correction", &enableGammaCorrection);
-			if (enableGammaCorrection) {
-				ImGui::InputFloat("Gamma", &gamma, 0.1f, 1.0f);
-			}
-			// normal visualization
-			ImGui::Checkbox("Show normals", &enableNormalVisualization);
-			if (enableNormalVisualization) {
-				ImGui::InputFloat("Normal magnitude", &normalMagnitude, 0.01f, 1.0f);
-				ImGui::ColorEdit3("Normal color", (float*)&normalColor);
-			}
-			// ground plane
-			ImGui::Checkbox("Display ground plane", &enableGroundPlane);
-			if (enableGroundPlane) {
-				ImGui::InputFloat("Plane scale", &planeScalingFactor, 0.01f, 1.0f);
-				ImGui::InputFloat("Plane height", &planeY, 0.1f, 1.0f);
-			}
-			// shadow map
-			ImGui::Checkbox("Enable shadow map", &enableShadowMap);
-			if (enableShadowMap) {
-				ImGui::InputFloat("Shadow bias", &shadowBias, 0.01f, 1.0f);
-			}
-			ImGui::Separator();
-
-			// select the shader
-			ImGui::Text("Shading model:");
-			const char* items[] = { "Gooch shading", "Phong shading", "Blinn-Phong shading"};
-			ImGui::Combo("", &shaderIndex, items, IM_ARRAYSIZE(items));
-			if (shaderIndex == 0) {           
-				ImGui::ColorEdit3("Mesh color", (float*)&meshColor);
-			}
-			else if (shaderIndex == 1 || shaderIndex == 2) {
-				ImGui::InputFloat("Brightness", &brightness, 0.1f, 1.0f);
-				ImGui::InputFloat("Shininess", &shininess, 1.0f, 1.0f);
-				ImGui::Checkbox("Enable distance attenuation", &enableAttenuation);
-				if (enableAttenuation) {
-					ImGui::InputFloat("Constant factor", &constantFactor);
-					ImGui::InputFloat("Linear factor", &linearFactor);
-					ImGui::InputFloat("Quadratic factor", &quadraticFactor);
-				}
-			}
-			*/
-			//ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-			ImGui::End();
+		/*
+		// gamma correction
+		ImGui::Checkbox("Enable gamma correction", &enableGammaCorrection);
+		if (enableGammaCorrection) {
+			ImGui::InputFloat("Gamma", &gamma, 0.1f, 1.0f);
 		}
+		// normal visualization
+		ImGui::Checkbox("Show normals", &enableNormalVisualization);
+		if (enableNormalVisualization) {
+			ImGui::InputFloat("Normal magnitude", &normalMagnitude, 0.01f, 1.0f);
+			ImGui::ColorEdit3("Normal color", (float*)&normalColor);
+		}
+		// ground plane
+		ImGui::Checkbox("Display ground plane", &enableGroundPlane);
+		if (enableGroundPlane) {
+			ImGui::InputFloat("Plane scale", &planeScalingFactor, 0.01f, 1.0f);
+			ImGui::InputFloat("Plane height", &planeY, 0.1f, 1.0f);
+		}
+		// shadow map
+		ImGui::Checkbox("Enable shadow map", &enableShadowMap);
+		if (enableShadowMap) {
+			ImGui::InputFloat("Shadow bias", &shadowBias, 0.01f, 1.0f);
+		}
+		ImGui::Separator();
+
+		// select the shader
+		ImGui::Text("Shading model:");
+		const char* items[] = { "Gooch shading", "Phong shading", "Blinn-Phong shading"};
+		ImGui::Combo("", &shaderIndex, items, IM_ARRAYSIZE(items));
+		if (shaderIndex == 0) {           
+			ImGui::ColorEdit3("Mesh color", (float*)&meshColor);
+		}
+		else if (shaderIndex == 1 || shaderIndex == 2) {
+			ImGui::InputFloat("Brightness", &brightness, 0.1f, 1.0f);
+			ImGui::InputFloat("Shininess", &shininess, 1.0f, 1.0f);
+			ImGui::Checkbox("Enable distance attenuation", &enableAttenuation);
+			if (enableAttenuation) {
+				ImGui::InputFloat("Constant factor", &constantFactor);
+				ImGui::InputFloat("Linear factor", &linearFactor);
+				ImGui::InputFloat("Quadratic factor", &quadraticFactor);
+			}
+		}
+		*/
+		//ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetI().Framerate);
+		ImGui::End();
 
 		// DELETE ME
 		//ImGui::ShowDemoWindow(&show_demo_window);
@@ -385,7 +409,7 @@ void FramebufferSizeCallback(GLFWwindow* window, const int width, const int heig
 	glViewport(0, 0, width, height);
 }
 
-// the mouse input
+// mouse input for sphere camera
 void SphereCameraMouseCallback(GLFWwindow* window, double xpos, double ypos) {
 	// calibrate the cursor position in the first frame
 	if (sphereCamera.IsFirstFrame()) {
@@ -401,15 +425,81 @@ void SphereCameraMouseCallback(GLFWwindow* window, double xpos, double ypos) {
 
 	// Update the camera position :)
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-		sphereCamera.UpdatePhi(-sphereCamera.GetMouseSensitivity() * yOffset);
-		sphereCamera.UpdateTheta(-sphereCamera.GetMouseSensitivity() * xOffset);
+		float sensitivity = sphereCamera.GetMouseSensitivity();
+		sphereCamera.UpdatePhi(-sensitivity * yOffset);
+		sphereCamera.UpdateTheta(-sensitivity * xOffset);
 		sphereCamera.UpdatePosition();
 	}
 }
 
+// scroll input for sphere camera
 void SphereCameraScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
 	// changed code in imgui_impl_glfw.cpp
 	ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
 	sphereCamera.UpdateRadius(-sphereCamera.GetMouseSensitivity() * yoffset);
 	sphereCamera.UpdatePosition();
+}
+
+// mouse input for First-person camera
+void FPCameraMouseCallback(GLFWwindow* window, double xpos, double ypos) {
+	// calibrate the cursor at the first frame
+	if (fpCamera.IsFirstFrame()) {
+		fpCamera.SetLastMouseX(xpos);
+		fpCamera.SetLastMouseY(ypos);
+		fpCamera.GameStart();
+	}
+
+	float xOffset = xpos - fpCamera.GetLastMouseX();
+	// reverse the order for some reason
+	// https://learnopengl.com/Getting-started/Camera
+	float yOffset = fpCamera.GetLastMouseY() - ypos;
+	fpCamera.SetLastMouseX(xpos);
+	fpCamera.SetLastMouseY(ypos);
+
+	float sensitivity = fpCamera.GetMouseSensitivity();
+	fpCamera.UpdatePitch(sensitivity * yOffset);
+	fpCamera.UpdateYaw(sensitivity * xOffset);
+
+	// set constraints for pitch
+	if (fpCamera.GetPitch() > 89.0f)
+		fpCamera.SetPitch(89.0f);
+	else if (fpCamera.GetPitch() < -89.0f)
+		fpCamera.SetPitch(-89.0f);
+
+	fpCamera.UpdataFront();
+}
+
+// scroll input for first-person camera
+void FPCameraScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+	// changed code in imgui_impl_glfw.cpp
+	ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
+	// TODO: implement this
+
+}
+
+void ProcessCameraSwitching(GLFWwindow* window) {
+	if (glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS) {
+		double currentTime = glfwGetTime();
+		// TODO: set this number to a comfortable value
+		if (currentTime - cameraSwitchFlag > 0.2) {
+			cameraSwitchFlag = glfwGetTime();
+		} else {
+			return;
+		}
+
+		if (currentCamera == Sphere) {
+			currentCamera = FP;
+			fpCamera.GamePause();
+			glfwSetCursorPosCallback(window, FPCameraMouseCallback);
+			glfwSetScrollCallback(window, FPCameraScrollCallback);
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		} else if (currentCamera == FP) {
+			currentCamera = Sphere;
+			// re-calibrate the mouse position
+			sphereCamera.GamePause();
+			glfwSetCursorPosCallback(window, SphereCameraMouseCallback);
+			glfwSetScrollCallback(window, SphereCameraScrollCallback);			
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		}
+	}
 }
